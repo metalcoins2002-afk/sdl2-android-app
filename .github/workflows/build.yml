@@ -1,0 +1,117 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    # 1. تحميل إصدار مستقر من SDL2 وتجهيز الهيكل بشكل حقيقي
+    - name: Download and Setup SDL2
+      run: |
+        wget https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz
+        tar -xzf SDL2-2.28.5.tar.gz
+        mv SDL2-2.28.5 SDL2
+        
+        # إنشاء المجلدات النهائية لكود الـ C++
+        mkdir -p SDL2/android-project/app/src/main/cpp/SDL2_source
+        
+        # نسخ مجلد سورس SDL2 بالكامل بشكل مباشر ليتعرف عليه CMake
+        cp -r SDL2/src SDL2/CMakeLists.txt SDL2/include SDL2/android-project/app/src/main/cpp/SDL2_source/
+        
+        # نسخ الأكواد الخاصة بك (main.cpp والـ CMakeLists الخاص بك)
+        cp main.cpp CMakeLists.txt SDL2/android-project/app/src/main/cpp/
+
+    # 2. كتابة ملف build.gradle النظيف والمتوافق مع CMake الحديث و C++17
+    - name: Create Clean build.gradle
+      run: |
+        cat << 'EOF' > SDL2/android-project/app/build.gradle
+        plugins {
+            id 'com.android.application'
+        }
+
+        android {
+            namespace "org.libsdl.app"
+            compileSdk 33
+
+            defaultConfig {
+                applicationId "com.metalcoins.sdl2app"
+                minSdk 21
+                targetSdk 33
+                versionCode 1
+                versionName "1.0"
+
+                externalNativeBuild {
+                    cmake {
+                        arguments "-DANDROID_STL=c++_shared"
+                        cppFlags "-std=c++17"
+                    }
+                }
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
+                }
+            }
+
+            externalNativeBuild {
+                cmake {
+                    path "src/main/cpp/CMakeLists.txt"
+                    version "3.22.1"
+                }
+            }
+
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.jar'])
+        }
+        EOF
+
+    # 3. تعديل ملف الـ CMakeLists الخاص بك لربط المجلد المنسوخ حديثاً
+    - name: Patch CMakeLists for Android Cloud Build
+      run: |
+        cat << 'EOF' > SDL2/android-project/app/src/main/cpp/CMakeLists.txt
+        cmake_minimum_required(VERSION 3.10)
+        project(SDL2GLESApp)
+
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+        # إضافة السورس المنسوخ مباشرة للبناء
+        add_subdirectory(SDL2_source ${CMAKE_CURRENT_BINARY_DIR}/SDL2_build)
+
+        add_library(main SHARED main.cpp)
+        target_link_libraries(main SDL2 GLESv2)
+        EOF
+
+    # 4. بناء ملف الـ APK النهائي
+    - name: Build with Gradle
+      run: |
+        cd SDL2/android-project
+        chmod +x gradlew
+        ./gradlew assembleDebug
+
+    # 5. رفع الملف الناتج
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: SDL2/android-project/app/build/outputs/apk/debug/app-debug.apk
