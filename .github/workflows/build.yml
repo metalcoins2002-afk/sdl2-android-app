@@ -18,23 +18,66 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # تحميل مكتبة SDL2 وإعداد مجلد أندرويد
+    # 1. تحميل إصدار مستقر من SDL2 وتجهيز الهيكل
     - name: Download and Setup SDL2
       run: |
         wget https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz
         tar -xzf SDL2-2.28.5.tar.gz
         mv SDL2-2.28.5 SDL2
+        
+        # إنشاء المجلدات ونسخ الأكواد الخاصة بك
         mkdir -p SDL2/android-project/app/src/main/cpp
         cp main.cpp CMakeLists.txt SDL2/android-project/app/src/main/cpp/
+        
+        # ربط سورس SDL2 بالكامل ليكون متاحاً لـ CMake أثناء بناء أندرويد
+        ln -s ../../../ SDL2/android-project/app/src/main/cpp/SDL2_source
 
-    # بناء ملف الـ APK باستخدام Gradle
+    # 2. تعديل إعدادات Gradle البرمجية لاستخدام CMake و C++17 بدلاً من ndk-build
+    - name: Configure Gradle to use CMake
+      run: |
+        cd SDL2/android-project/app
+        
+        # تعديل ملف build.gradle ليفهم أننا نستخدم CMake وأننا نريد معيار C++17
+        sed -i '/ndkBuild {/Q' build.gradle
+        cat << 'EOF' >> build.gradle
+            externalNativeBuild {
+                cmake {
+                    path "src/main/cpp/CMakeLists.txt"
+                    version "3.10.2+"
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+        EOF
+
+    # 3. تعديل ملف الـ CMakeLists الخاص بك ليدمج السورس الخاص بـ SDL2 سحابياً
+    - name: Patch CMakeLists for Android Cloud Build
+      run: |
+        cat << 'EOF' > SDL2/android-project/app/src/main/cpp/CMakeLists.txt
+        cmake_minimum_required(VERSION 3.10)
+        project(SDL2GLESApp)
+
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+        # إضافة سورس SDL2 مباشرة للبناء بدلاً من البحث عنه كحزمة خارجية جاهزة
+        add_subdirectory(SDL2_source ${CMAKE_CURRENT_BINARY_DIR}/SDL2_build)
+
+        add_library(main SHARED main.cpp)
+        target_link_libraries(main SDL2 GLESv2)
+        EOF
+
+    # 4. بناء ملف الـ APK النهائي
     - name: Build with Gradle
       run: |
         cd SDL2/android-project
         chmod +x gradlew
         ./gradlew assembleDebug
 
-    # رفع ملف الـ APK النهائي بإصدار v4 المعتمد
+    # 5. رفع الملف الناتج
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
