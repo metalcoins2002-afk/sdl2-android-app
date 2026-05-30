@@ -29,27 +29,57 @@ jobs:
         mkdir -p SDL2/android-project/app/src/main/cpp
         cp main.cpp CMakeLists.txt SDL2/android-project/app/src/main/cpp/
         
-        # ربط سورس SDL2 بالكامل ليكون متاحاً لـ CMake أثناء بناء أندرويد
+        # ربط سورس SDL2 بالكامل
         ln -s ../../../ SDL2/android-project/app/src/main/cpp/SDL2_source
 
-    # 2. تعديل إعدادات Gradle البرمجية لاستخدام CMake و C++17 بدلاً من ndk-build
-    - name: Configure Gradle to use CMake
+    # 2. كتابة ملف build.gradle نظيف وجديد تماماً يدعم CMake و C++17
+    - name: Create Clean build.gradle
       run: |
-        cd SDL2/android-project/app
-        
-        # تعديل ملف build.gradle ليفهم أننا نستخدم CMake وأننا نريد معيار C++17
-        sed -i '/ndkBuild {/Q' build.gradle
-        cat << 'EOF' >> build.gradle
+        cat << 'EOF' > SDL2/android-project/app/build.gradle
+        plugins {
+            id 'com.android.application'
+        }
+
+        android {
+            namespace "org.libsdl.app"
+            compileSdk 33
+
+            defaultConfig {
+                applicationId "com.metalcoins.sdl2app"
+                minSdk 21
+                targetSdk 33
+                versionCode 1
+                versionName "1.0"
+
+                externalNativeBuild {
+                    cmake {
+                        arguments "-DANDROID_STL=c++_shared"
+                        cppFlags "-std=c++17"
+                    }
+                }
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
+                }
+            }
+
             externalNativeBuild {
                 cmake {
                     path "src/main/cpp/CMakeLists.txt"
                     version "3.10.2+"
                 }
             }
+
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_17
                 targetCompatibility JavaVersion.VERSION_17
             }
+        }
+
+        dependencies {
+            implementation fileTree(dir: 'libs', include: ['*.jar'])
         }
         EOF
 
@@ -63,7 +93,7 @@ jobs:
         set(CMAKE_CXX_STANDARD 17)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-        # إضافة سورس SDL2 مباشرة للبناء بدلاً من البحث عنه كحزمة خارجية جاهزة
+        # إضافة سورس SDL2 مباشرة للبناء
         add_subdirectory(SDL2_source ${CMAKE_CURRENT_BINARY_DIR}/SDL2_build)
 
         add_library(main SHARED main.cpp)
