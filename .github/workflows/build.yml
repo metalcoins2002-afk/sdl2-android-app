@@ -18,20 +18,20 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # 1. تحميل إصدار مستقر من SDL2 وتجهيز الهيكل بكافة المجلدات الفرعية الحرجية
-    - name: Download and Setup SDL2
+    # 1. تحميل وفك ضغط SDL2 ونسخ المجلد بالكامل دفعة واحدة
+    - name: Download and Full Setup SDL2
       run: |
         wget https://github.com/libsdl-org/SDL/releases/download/release-2.28.5/SDL2-2.28.5.tar.gz
         tar -xzf SDL2-2.28.5.tar.gz
         mv SDL2-2.28.5 SDL2
         
-        # إنشاء المجلد النهائي
-        mkdir -p SDL2/android-project/app/src/main/cpp/SDL2_source
+        # إنشاء المجلد النهائي لكود الـ C++
+        mkdir -p SDL2/android-project/app/src/main/cpp
         
-        # نسخ سورس SDL2 بالكامل مع مجلد cmake الداخلي والمستندات الهامة
-        cp -r SDL2/src SDL2/include SDL2/cmake SDL2/CMakeLists.txt SDL2/android-project/app/src/main/cpp/SDL2_source/
+        # نسخ مجلد SDL2 بالكامل بكل ما يحتويه لضمان وجود كل ملفات الـ cmake والـ source
+        cp -r SDL2/. SDL2/android-project/app/src/main/cpp/SDL2_source/
         
-        # نسخ الأكواد الخاصة بك
+        # نسخ الأكواد الخاصة بك (main.cpp والـ CMakeLists الخاص بك)
         cp main.cpp CMakeLists.txt SDL2/android-project/app/src/main/cpp/
 
     # 2. كتابة ملف build.gradle النظيف والمتوافق مع CMake الحديث و C++17
@@ -85,7 +85,7 @@ jobs:
         }
         EOF
 
-    # 3. تعديل ملف الـ CMakeLists الخاص بك لربط المجلد المنسوخ حديثاً
+    # 3. تعديل ملف الـ CMakeLists الخاص بك ليرتبط بمجلد SDL2 الكامل
     - name: Patch CMakeLists for Android Cloud Build
       run: |
         cat << 'EOF' > SDL2/android-project/app/src/main/cpp/CMakeLists.txt
@@ -95,7 +95,7 @@ jobs:
         set(CMAKE_CXX_STANDARD 17)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-        # إضافة السورس المنسوخ مباشرة للبناء
+        # إضافة المجلد الكامل للبناء
         add_subdirectory(SDL2_source ${CMAKE_CURRENT_BINARY_DIR}/SDL2_build)
 
         add_library(main SHARED main.cpp)
